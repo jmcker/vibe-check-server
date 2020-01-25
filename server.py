@@ -106,19 +106,28 @@ def bottle_vibe_get():
     vibes = get_top_vibes(latitude, longitute, radius, limit)
 
     return {
-        'count': len(vibes),
         'vibes': vibes
     }
 
 @app.post('/api/vibe')
 def bottle_vibe_post():
 
+    if (not 'latitude' in request.json):
+        raise HTTPError(400, 'Missing "latitude"')
+
+    if (not 'longitude' in request.json):
+        raise HTTPError(400, 'Missing "longitude"')
+
+    if (not 'tracks' in request.json):
+        raise HTTPError(400, 'Missing "tracks"')
+
     location_id = add_location(request.json['latitude'], request.json['longitude'])
 
     track_ids = []
     for track in request.json['tracks']:
-        db_id = add_track(track)
-        track_ids.append(db_id)
+        artist_id = add_artist(track)
+        track_id = add_track(track)
+        track_ids.append(track_id)
 
     for track_id in track_ids:
         add_vibe(location_id, track_id)
@@ -156,24 +165,55 @@ def add_location(latitude, longitude):
     location_id = cursor.fetchone()['id']
     return location_id
 
+def add_artist(artist_info):
+
+    qstring = '''
+        INSERT OR IGNORE INTO artist (
+            spotify_id,
+            name
+        ) VALUES (?, ?)
+    '''
+
+    db.execute(qstring, [
+        artist_info['artist_id'],
+        artist_info['artist']
+    ])
+
+    db.commit()
+
+    qstring = '''
+        SELECT id FROM artist
+        WHERE
+            spotify_id = ?
+    '''
+
+    cursor = db.execute(qstring, [
+        artist_info['artist_id']
+    ])
+
+    artist_id = cursor.fetchone()['id']
+    return artist_id
+
 def add_track(track_info):
 
     qstring = '''
         INSERT OR IGNORE INTO track (
             spotify_id,
+            artist_id,
             title,
             album,
-            artist,
             genre,
             popularity
-        ) VALUES (?, ?, ?, ?, ?, ?)
+        ) VALUES (?,
+            (SELECT id FROM artist WHERE spotify_id = ?),
+        ?, ?, ?, ?)
     '''
 
     db.execute(qstring, [
-        track_info['spotify_id'],
+        track_info['track_id'],
+        track_info['artist_id'],
         track_info['title'],
-        track_info['album']
-        track_info['artist'],
+        track_info['album'],
         track_info['genre'],
         track_info['popularity']
     ])
@@ -188,7 +228,7 @@ def add_track(track_info):
     '''
 
     cursor = db.execute(qstring, [
-        track_info['spotify_id']
+        track_info['track_id']
     ])
 
     track_id = cursor.fetchone()['id']
@@ -250,9 +290,25 @@ def get_top_vibes(latitude, longitude, radius = 15, limit = 10):
     print(f'Box hypotenuse (mi): {hypotenuse_mi}')
 
     qstring = f'''
-        SELECT * FROM vibe AS v
+        SELECT
+            location_id,
+            latitude,
+            longitude,
+            t.id AS track_id,
+            a.id AS artist_id,
+            t.spotify_id AS spotify_track_id,
+            a.spotify_id AS spotify_artist_id,
+            count,
+            last_vibed,
+            title,
+            album,
+            a.name AS artist,
+            genre,
+            popularity
+        FROM vibe AS v
             LEFT JOIN location AS l ON v.location_id = l.id
             LEFT JOIN track AS t ON v.track_id = t.id
+            LEFT JOIN artist AS a ON t.artist_id = a.id
         WHERE
             l.latitude > ?
             AND l.latitude < ?

@@ -6,6 +6,8 @@ import requests
 from bottle import Bottle, HTTPError, request, response, run
 from requests.auth import HTTPBasicAuth
 
+spotify_datetime_format = '%Y-%m-%dT%H:%M:%fZ'
+
 app = application = Bottle()
 
 with open('secrets.json') as f:
@@ -20,6 +22,10 @@ with open('db/sqlite-init.sql', mode='r') as f:
 
     db.executescript(qstring)
     db.commit()
+
+    print('Initialized SQLite database')
+
+print()
 
 @app.get('/')
 def bottle_index():
@@ -156,15 +162,17 @@ def add_track(track_info):
         INSERT OR IGNORE INTO track (
             spotify_id,
             title,
+            album,
             artist,
             genre,
             popularity
-        ) VALUES (?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?)
     '''
 
     db.execute(qstring, [
         track_info['spotify_id'],
         track_info['title'],
+        track_info['album']
         track_info['artist'],
         track_info['genre'],
         track_info['popularity']
@@ -188,11 +196,12 @@ def add_track(track_info):
 
 def add_vibe(location_id, track_id):
 
-    qstring = '''
+    qstring = f'''
         INSERT OR IGNORE INTO vibe (
             location_id,
-            track_id
-        ) VALUES (?, ?)
+            track_id,
+            last_vibed
+        ) VALUES (?, ?, strftime('{spotify_datetime_format}', 'now'))
     '''
 
     db.execute(qstring, [
@@ -202,9 +211,10 @@ def add_vibe(location_id, track_id):
 
     db.commit()
 
-    qstring = '''
+    qstring = f'''
         UPDATE vibe SET
-            count = count + 1
+            count = count + 1,
+            last_vibed = strftime('{spotify_datetime_format}', 'now')
         WHERE
             location_id = ?
             AND track_id = ?
@@ -219,20 +229,47 @@ def add_vibe(location_id, track_id):
 
 def get_top_vibes(latitude, longitude, radius = 15, limit = 10):
 
-    qstring = '''
+    latitude = float(latitude)
+    longitude = float(longitude)
+
+    # Roughly estimate a bounding box
+    degree_change = geopy.units.degrees(arcminutes=geopy.units.nautical(miles=radius / 2))
+    # Backwards: geopy.units.miles(nautical=geopy.units.arcminutes(degrees=degree_change))
+
+    min_latitude = latitude - degree_change
+    max_latitude = latitude + degree_change
+    min_longitude = longitude - degree_change
+    max_longitude = longitude + degree_change
+
+    min_point = (min_latitude, min_longitude)
+    max_point = (max_latitude, max_longitude)
+
+    hypotenuse_mi = geopy.distance.distance(min_point, max_point).miles
+
+    print(f'Request radius (mi): {radius}')
+    print(f'Box hypotenuse (mi): {hypotenuse_mi}')
+
+    qstring = f'''
         SELECT * FROM vibe AS v
             LEFT JOIN location AS l ON v.location_id = l.id
             LEFT JOIN track AS t ON v.track_id = t.id
         WHERE
-            l.latitude = ?
-            AND l.longitude = ?
+            l.latitude > ?
+            AND l.latitude < ?
+            AND l.longitude > ?
+            AND l.longitude < ?
+            AND v.last_vibed > strftime('{spotify_datetime_format}', 'now', '-7 days')
         ORDER BY count DESC, popularity DESC
         LIMIT ?
     '''
 
-    # TODO: Create bounding box with latitude and longitude
-
-    cursor = db.execute(qstring, [latitude, longitude, limit])
+    cursor = db.execute(qstring, [
+        min_latitude,
+        max_latitude,
+        min_longitude,
+        max_longitude,
+        limit
+    ])
     return sqlite_result_to_serializable(cursor.fetchall())
 
 def sqlite_result_to_serializable(result):

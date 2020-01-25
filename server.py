@@ -1,8 +1,14 @@
+import json
 import sqlite3
 
-from bottle import Bottle, HTTPError, request, response, run, static_file, view
+import requests
+from bottle import Bottle, HTTPError, request, response, run
+from requests.auth import HTTPBasicAuth
 
 app = application = Bottle()
+
+with open('secrets.json') as f:
+    secrets = json.load(f)
 
 # Initialize the database
 db = sqlite3.connect('db/vibe-check.db')
@@ -14,7 +20,6 @@ with open('db/sqlite-init.sql', mode='r') as f:
     db.executescript(qstring)
     db.commit()
 
-
 @app.get('/')
 def bottle_index():
 
@@ -25,6 +30,40 @@ def bottle_index():
             <li>[POST] - /api/vibes</li>
         </ul>
     '''
+
+@app.get('/api/auth')
+def bottle_spotify_auth():
+
+    error = request.query.error
+
+    if (error):
+        print(f'Spotify auth failed: {error}')
+        raise HTTPError(403, f'Spotify auth failed: {error}')
+
+    code = request.query.code
+    _ = request.query.state
+
+    if (not code):
+        raise HTTPError(400, 'Missing "code" parameter')
+
+    # Contact Spotify to get the access and refresh tokens
+    resp = requests.post('https://accounts.spotify.com/api/token',
+        data={
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': request.url
+        },
+        auth=HTTPBasicAuth(secrets['client_id'], secrets['client_secret'])
+    )
+
+    if (resp.status_code != 200):
+        raise HTTPError(403, f'Spotify token exchange failed: {resp.status_code} - "{resp.text}"')
+
+    # TODO: Remove
+    print(resp.text)
+
+    json_resp = json.loads(resp.text)
+    return json_resp
 
 @app.get('/api/vibe')
 def bottle_vibe_get():

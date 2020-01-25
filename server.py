@@ -112,6 +112,9 @@ def bottle_vibe_get():
 @app.post('/api/vibe')
 def bottle_vibe_post():
 
+    if (not request.json):
+        raise HTTPError(400, 'Body must contain valid JSON')
+
     if (not 'latitude' in request.json):
         raise HTTPError(400, 'Missing "latitude"')
 

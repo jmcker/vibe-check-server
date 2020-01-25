@@ -1,6 +1,7 @@
 import json
 import sqlite3
 
+import geopy.distance
 import requests
 from bottle import Bottle, HTTPError, request, response, run
 from requests.auth import HTTPBasicAuth
@@ -51,7 +52,7 @@ def bottle_spotify_auth():
         data={
             'grant_type': 'authorization_code',
             'code': code,
-            'redirect_uri': request.url
+            'redirect_uri': 'https://vibecheck.tk/api/auth'
         },
         auth=HTTPBasicAuth(secrets['client_id'], secrets['client_secret'])
     )

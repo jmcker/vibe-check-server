@@ -279,6 +279,8 @@ def get_top_vibes(latitude, longitude, radius = 15, limit = 10):
     degree_change = geopy.units.degrees(arcminutes=geopy.units.nautical(miles=radius / 2))
     # Backwards: geopy.units.miles(nautical=geopy.units.arcminutes(degrees=degree_change))
 
+    print(f'Degree change: {degree_change}')
+
     min_latitude = latitude - degree_change
     max_latitude = latitude + degree_change
     min_longitude = longitude - degree_change
@@ -289,8 +291,14 @@ def get_top_vibes(latitude, longitude, radius = 15, limit = 10):
 
     hypotenuse_mi = geopy.distance.distance(min_point, max_point).miles
 
+    print()
+    print(f'Min lat: {min_latitude}')
+    print(f'Max lat: {max_latitude}')
+    print(f'Min lon: {min_longitude}')
+    print(f'Max lon: {max_longitude}')
     print(f'Request radius (mi): {radius}')
     print(f'Box hypotenuse (mi): {hypotenuse_mi}')
+    print()
 
     qstring = f'''
         SELECT

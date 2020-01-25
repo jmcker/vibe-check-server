@@ -1,8 +1,13 @@
 CREATE TABLE IF NOT EXISTS location (
     id INTEGER PRIMARY KEY,
-    latitude TEXT NOT NULL,
-    longitude TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
     UNIQUE (latitude, longitude)
+);
+
+CREATE TABLE IF NOT EXISTS genre (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS artist (

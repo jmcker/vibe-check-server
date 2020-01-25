@@ -32,6 +32,26 @@ def bottle_index():
         </ul>
     '''
 
+@app.get('/auth')
+def bottle_spotify_auth_landing():
+
+    error = request.query.error
+
+    if (error):
+        print(f'Spotify auth failed: {error}')
+        raise HTTPError(403, f'Spotify auth failed: {error}')
+
+    code = request.query.code
+    _ = request.query.state
+
+    if (not code):
+        raise HTTPError(400, 'Missing "code" parameter')
+
+    return '''
+        <h1>Success!</h1>
+        <p>Spotify authentication was successful. You can close this window now.</p>
+    '''
+
 @app.get('/api/auth')
 def bottle_spotify_auth():
 
@@ -59,9 +79,6 @@ def bottle_spotify_auth():
 
     if (resp.status_code != 200):
         raise HTTPError(403, f'Spotify token exchange failed: {resp.status_code} - "{resp.text}"')
-
-    # TODO: Remove
-    print(resp.text)
 
     json_resp = json.loads(resp.text)
     return json_resp

@@ -72,7 +72,7 @@ def bottle_spotify_auth():
         data={
             'grant_type': 'authorization_code',
             'code': code,
-            'redirect_uri': 'https://vibecheck.tk/api/auth'
+            'redirect_uri': 'https://vibecheck.tk/auth'
         },
         auth=HTTPBasicAuth(secrets['client_id'], secrets['client_secret'])
     )

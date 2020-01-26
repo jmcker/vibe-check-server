@@ -33,7 +33,7 @@ def bottle_index():
     return '''
         <h1>Vibe Check API</h1>
         <ul>
-            <li>[GET] - /api/vibes?lat=X&lon=X&radius=X&limit=X</li>
+            <li>[GET] - /api/vibes?lat_min=X&lat_max=X&lon_min=X&lon_max=X&=X&limit=X</li>
             <li>[POST] - /api/vibes</li>
         </ul>
     '''
@@ -121,8 +121,8 @@ def bottle_vibe_post():
 def bottle_vibe_all():
 
     params = bottle_check_vibe_params(request.query)
-    vibes = get_top_vibes(params['lat'], params['lon'], params['radius'], params['limit'])
-    genres = get_top_genres(params['lat'], params['lon'], params['radius'], params['limit'])
+    vibes = get_top_vibes(params)
+    genres = get_top_genres(params)
 
     return {
         'genres': genres,
@@ -133,7 +133,7 @@ def bottle_vibe_all():
 def bottle_vibe_get_track():
 
     params = bottle_check_vibe_params(request.query)
-    vibes = get_top_vibes(params['lat'], params['lon'], params['radius'], params['limit'])
+    vibes = get_top_vibes(params)
 
     return {
         'vibes': vibes
@@ -143,7 +143,7 @@ def bottle_vibe_get_track():
 def bottle_vibe_get_genre():
 
     params = bottle_check_vibe_params(request.query)
-    genres = get_top_genres(params['lat'], params['lon'], params['radius'], params['limit'])
+    genres = get_top_genres(params)
 
     return {
         'genres': genres
@@ -153,16 +153,23 @@ def bottle_check_vibe_params(query_params):
 
     params = {}
 
-    params['lat'] = request.query.lat
-    params['lon'] = request.query.lon
-    params['radius'] = request.query.radius or 10     # miles
+    params['lat_min'] = request.query.lat_min
+    params['lat_max'] = request.query.lat_max
+    params['lon_min'] = request.query.lon_min
+    params['lon_max'] = request.query.lon_max
     params['limit'] = request.query.limit or 15
 
-    if (not params['lat']):
-        raise HTTPError(400, 'Missing "latitude"')
+    if (not params['lat_min']):
+        raise HTTPError(400, 'Missing "lat_min"')
 
-    if (not params['lon']):
-        raise HTTPError(400, 'Missing "longitude"')
+    if (not params['lat_max']):
+        raise HTTPError(400, 'Missing "lat_max"')
+
+    if (not params['lon_min']):
+        raise HTTPError(400, 'Missing "lon_min"')
+
+    if (not params['lon_max']):
+        raise HTTPError(400, 'Missing "lon_max"')
 
     return params
 
@@ -299,9 +306,7 @@ def add_vibe(location_id, track_id):
 
     db.commit()
 
-def get_top_vibes(latitude, longitude, radius, limit):
-
-    min_latitude, max_latitude, min_longitude, max_longitude = make_bound_box(latitude, longitude, radius)
+def get_top_vibes(params):
 
     qstring = f'''
         SELECT
@@ -334,17 +339,15 @@ def get_top_vibes(latitude, longitude, radius, limit):
     '''
 
     cursor = db.execute(qstring, [
-        min_latitude,
-        max_latitude,
-        min_longitude,
-        max_longitude,
-        limit
+        params['lat_min'],
+        params['lat_max'],
+        params['lon_min'],
+        params['lon_max'],
+        params['limit']
     ])
     return sqlite_result_to_serializable(cursor.fetchall())
 
-def get_top_genres(latitude, longitude, radius, limit):
-
-    min_latitude, max_latitude, min_longitude, max_longitude = make_bound_box(latitude, longitude, radius)
+def get_top_genres(params):
 
     qstring = f'''
         SELECT DISTINCT
@@ -364,11 +367,11 @@ def get_top_genres(latitude, longitude, radius, limit):
     '''
 
     cursor = db.execute(qstring, [
-        min_latitude,
-        max_latitude,
-        min_longitude,
-        max_longitude,
-        limit
+        params['lat_min'],
+        params['lat_max'],
+        params['lon_min'],
+        params['lon_max'],
+        params['limit']
     ])
 
     genres = []

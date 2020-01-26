@@ -133,11 +133,11 @@ def bottle_get_vibe():
     vibes = []
     for box in big_box.boxes():
 
-        vibe = get_top_vibes(box)
+        specific_vibes = get_top_vibes(box)
 
         # Pick just one for now
-        if (len(vibe) > 0):
-            vibes.append(vibe[0])
+        if (len(specific_vibes) > 0):
+            vibes.extend(specific_vibes)
 
     return {
         'vibes': vibes
@@ -355,7 +355,7 @@ def get_top_vibes(box):
             AND genre != 'Other'
         GROUP BY genre
         ORDER BY genre_total_count DESC, genre_avg_popularity DESC
-        LIMIT 1
+        LIMIT 3
     '''
 
     cursor = db.execute(qstring, [

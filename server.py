@@ -247,19 +247,23 @@ def add_artist(artist_info):
 def add_track(track_info):
 
     qstring = '''
-        INSERT OR IGNORE INTO track (
+        INSERT OR REPLACE INTO track (
+            id,
             spotify_id,
             artist_id,
             title,
             album,
             genre,
             popularity
-        ) VALUES (?,
+        ) VALUES (
+            (SELECT id FROM track WHERE spotify_id = ?),
+            ?,
             (SELECT id FROM artist WHERE spotify_id = ?),
         ?, ?, ?, ?)
     '''
 
     db.execute(qstring, [
+        track_info['track_id'],
         track_info['track_id'],
         track_info['artist_id'],
         track_info['title'],

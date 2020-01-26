@@ -5,8 +5,10 @@ import geopy.distance
 import requests
 from bottle import Bottle, HTTPError, request, response, run
 from requests.auth import HTTPBasicAuth
+from bounds import DividedBounds, BoundingBox
 
 spotify_datetime_format = '%Y-%m-%dT%H:%M:%fZ'
+acceptable_divisions = set([1, 4, 9, 16])
 
 app = application = Bottle()
 
@@ -116,37 +118,26 @@ def bottle_vibe_post():
         add_vibe(location_id, track_id)
 
     response.status = 201
+    return
 
 @app.get('/api/vibe')
-def bottle_vibe_all():
+def bottle_get_vibe():
 
     params = bottle_check_vibe_params(request.query)
-    vibes = get_top_vibes(params)
-    genres = get_top_genres(params)
 
-    return {
-        'genres': genres,
-        'vibes': vibes
-    }
+    big_box = DividedBounds(params['lat_min'], params['lat_max'], params['lon_min'], params['lon_max'], params['divisions'])
 
-@app.get('/api/vibe/track')
-def bottle_vibe_get_track():
+    vibes = []
+    for box in big_box.boxes():
 
-    params = bottle_check_vibe_params(request.query)
-    vibes = get_top_vibes(params)
+        vibe = get_top_vibes(box)
+
+        # Pick just one for now
+        if (len(vibe) > 0):
+            vibes.append(vibe[0])
 
     return {
         'vibes': vibes
-    }
-
-@app.get('/api/vibe/genre')
-def bottle_vibe_get_genre():
-
-    params = bottle_check_vibe_params(request.query)
-    genres = get_top_genres(params)
-
-    return {
-        'genres': genres
     }
 
 def bottle_check_vibe_params(query_params):
@@ -157,7 +148,8 @@ def bottle_check_vibe_params(query_params):
     params['lat_max'] = request.query.lat_max
     params['lon_min'] = request.query.lon_min
     params['lon_max'] = request.query.lon_max
-    params['limit'] = request.query.limit or 15
+    params['divisions'] = request.query.divisions or 9
+    params['limit'] = request.query.limit or 15 # TODO: Remove
 
     if (not params['lat_min']):
         raise HTTPError(400, 'Missing "lat_min"')
@@ -171,16 +163,20 @@ def bottle_check_vibe_params(query_params):
     if (not params['lon_max']):
         raise HTTPError(400, 'Missing "lon_max"')
 
-    lat_min = float(params['lat_min'])
-    lat_max = float(params['lat_max'])
-    lon_min = float(params['lon_min'])
-    lon_max = float(params['lon_max'])
+    params['lat_min'] = float(params['lat_min'])
+    params['lat_max'] = float(params['lat_max'])
+    params['lon_min'] = float(params['lon_min'])
+    params['lon_max'] = float(params['lon_max'])
+    params['divisions'] = float(params['divisions'])
 
-    if (lat_max < lat_min):
+    if (params['lat_max'] < params['lat_min']):
         raise HTTPError(400, 'Invalid latitude range. lat_min is smaller than lat_max')
 
-    if (lon_max < lon_min):
+    if (params['lon_max'] < params['lon_min'] ):
         raise HTTPError(400, 'Invalid longitude range. lon_min is smaller than lon_max')
+
+    if (params['divisions'] not in acceptable_divisions):
+        raise HTTPError(400, 'Invalid division number. Must be divisible by 2, positive, and less than 16')
 
     return params
 
@@ -321,24 +317,26 @@ def add_vibe(location_id, track_id):
 
     db.commit()
 
-def get_top_vibes(params):
+def get_top_vibes(box):
 
     qstring = f'''
         SELECT
             location_id,
             latitude,
             longitude,
+            genre,
+            sum(count) AS genre_total_count,
+            avg(popularity) AS genre_avg_popularity,
             t.id AS track_id,
             a.id AS artist_id,
             t.spotify_id AS spotify_track_id,
             a.spotify_id AS spotify_artist_id,
-            count,
+            count AS top_track_count,
             last_vibed,
             title,
             album,
             a.name AS artist,
-            genre,
-            popularity
+            popularity AS top_track_popularity
         FROM vibe AS v
             LEFT JOIN location AS l ON v.location_id = l.id
             LEFT JOIN track AS t ON v.track_id = t.id
@@ -349,83 +347,18 @@ def get_top_vibes(params):
             AND l.longitude > ?
             AND l.longitude < ?
             AND v.last_vibed > strftime('{spotify_datetime_format}', 'now', '-7 days')
-        ORDER BY count DESC, popularity DESC
-        LIMIT ?
+        GROUP BY genre
+        ORDER BY genre_total_count DESC, genre_avg_popularity DESC
+        LIMIT 1
     '''
 
     cursor = db.execute(qstring, [
-        params['lat_min'],
-        params['lat_max'],
-        params['lon_min'],
-        params['lon_max'],
-        params['limit']
+        box.lat_min,
+        box.lat_max,
+        box.lon_min,
+        box.lon_max
     ])
     return sqlite_result_to_serializable(cursor.fetchall())
-
-def get_top_genres(params):
-
-    qstring = f'''
-        SELECT DISTINCT
-            genre
-        FROM vibe AS v
-            LEFT JOIN location AS l ON v.location_id = l.id
-            LEFT JOIN track AS t ON v.track_id = t.id
-            LEFT JOIN artist AS a ON t.artist_id = a.id
-        WHERE
-            l.latitude > ?
-            AND l.latitude < ?
-            AND l.longitude > ?
-            AND l.longitude < ?
-            AND v.last_vibed > strftime('{spotify_datetime_format}', 'now', '-7 days')
-        ORDER BY count DESC, popularity DESC
-        LIMIT ?
-    '''
-
-    cursor = db.execute(qstring, [
-        params['lat_min'],
-        params['lat_max'],
-        params['lon_min'],
-        params['lon_max'],
-        params['limit']
-    ])
-
-    genres = []
-    for row in cursor:
-        genres.append(row['genre'])
-
-    return genres
-
-def make_bound_box(latitude, longitude, radius):
-
-    latitude = float(latitude)
-    longitude = float(longitude)
-
-    # Roughly estimate a bounding box
-    degree_change = geopy.units.degrees(arcminutes=geopy.units.nautical(miles=radius / 2))
-    # Backwards: geopy.units.miles(nautical=geopy.units.arcminutes(degrees=degree_change))
-
-    print(f'Degree change: {degree_change}')
-
-    min_latitude = latitude - degree_change
-    max_latitude = latitude + degree_change
-    min_longitude = longitude - degree_change
-    max_longitude = longitude + degree_change
-
-    min_point = (min_latitude, min_longitude)
-    max_point = (max_latitude, max_longitude)
-
-    hypotenuse_mi = geopy.distance.distance(min_point, max_point).miles
-
-    print()
-    print(f'Min lat: {min_latitude}')
-    print(f'Max lat: {max_latitude}')
-    print(f'Min lon: {min_longitude}')
-    print(f'Max lon: {max_longitude}')
-    print(f'Request radius (mi): {radius}')
-    print(f'Box hypotenuse (mi): {hypotenuse_mi}')
-    print()
-
-    return (min_latitude, max_latitude, min_longitude, max_longitude)
 
 def sqlite_result_to_serializable(result):
     return [dict(row) for row in result]

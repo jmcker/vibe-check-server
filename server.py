@@ -111,7 +111,7 @@ def bottle_vibe_post():
 
     track_ids = []
     for track in request.json['tracks']:
-        artist_id = add_artist(track)
+        add_artist(track)
         track_id = add_track(track)
         track_ids.append(track_id)
 
@@ -119,7 +119,9 @@ def bottle_vibe_post():
         add_vibe(location_id, track_id)
 
     response.status = 201
-    return
+    return {
+        'track_ids': track_ids
+    }
 
 @app.get('/api/vibe')
 def bottle_get_vibe():
@@ -251,12 +253,13 @@ def add_track(track_info):
             title,
             album,
             genre,
+            original_genre,
             popularity
         ) VALUES (
             (SELECT id FROM track WHERE spotify_id = ?),
             ?,
             (SELECT id FROM artist WHERE spotify_id = ?),
-        ?, ?, ?, ?)
+        ?, ?, ?, ?, ?)
     '''
 
     db.execute(qstring, [
@@ -266,6 +269,7 @@ def add_track(track_info):
         track_info['title'],
         track_info['album'],
         track_info['genre'],
+        track_info['original_genre'],
         track_info['popularity']
     ])
 

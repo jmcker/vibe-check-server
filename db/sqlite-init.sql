@@ -5,11 +5,6 @@ CREATE TABLE IF NOT EXISTS location (
     UNIQUE (latitude, longitude)
 );
 
-CREATE TABLE IF NOT EXISTS genre (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS artist (
     id INTEGER PRIMARY KEY,
     spotify_id TEXT NOT NULL UNIQUE,
@@ -23,6 +18,7 @@ CREATE TABLE IF NOT EXISTS track (
     artist_id INTEGER REFERENCES artist(id),
     album TEXT NOT NULL,
     genre TEXT NOT NULL,
+    original_genre TEXT,
     popularity INTEGER NOT NULL
 );
 

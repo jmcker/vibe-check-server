@@ -1,11 +1,12 @@
 import json
 import sqlite3
+from random import random
 
 import geopy.distance
 import requests
 from bottle import Bottle, HTTPError, request, response, run
+from bounds import BoundingBox, DividedBounds
 from requests.auth import HTTPBasicAuth
-from bounds import DividedBounds, BoundingBox
 
 spotify_datetime_format = '%Y-%m-%dT%H:%M:%fZ'
 acceptable_divisions = set([1, 4, 9, 16])
@@ -347,6 +348,7 @@ def get_top_vibes(box):
             AND l.longitude > ?
             AND l.longitude < ?
             AND v.last_vibed > strftime('{spotify_datetime_format}', 'now', '-7 days')
+            AND genre != 'Other'
         GROUP BY genre
         ORDER BY genre_total_count DESC, genre_avg_popularity DESC
         LIMIT 1
@@ -359,6 +361,34 @@ def get_top_vibes(box):
         box.lon_max
     ])
     return sqlite_result_to_serializable(cursor.fetchall())
+
+def randomize_locations():
+
+    qstring = '''
+        SELECT id, latitude, longitude FROM location
+    '''
+    cursor = db.execute(qstring)
+
+    for row in cursor:
+        lat_rand = (random() - 0.5) * 0.01
+        lon_rand = (random() - 0.5) * 0.01
+
+        print(f'Row id: {row["id"]} - {row["latitude"]} + {lat_rand} - {row["longitude"]} + {lon_rand}')
+
+        qstring = '''
+            UPDATE location SET
+                latitude = latitude + ?,
+                longitude = longitude + ?
+            WHERE
+                id = ?
+        '''
+        db.execute(qstring, [
+            lat_rand,
+            lon_rand,
+            row['id']
+        ])
+
+    db.commit()
 
 def sqlite_result_to_serializable(result):
     return [dict(row) for row in result]

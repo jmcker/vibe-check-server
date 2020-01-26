@@ -171,6 +171,17 @@ def bottle_check_vibe_params(query_params):
     if (not params['lon_max']):
         raise HTTPError(400, 'Missing "lon_max"')
 
+    lat_min = float(params['lat_min'])
+    lat_max = float(params['lat_max'])
+    lon_min = float(params['lon_min'])
+    lon_max = float(params['lon_max'])
+
+    if (lat_max < lat_min):
+        raise HTTPError(400, 'Invalid latitude range. lat_min is smaller than lat_max')
+
+    if (lon_max < lon_min):
+        raise HTTPError(400, 'Invalid longitude range. lon_min is smaller than lon_max')
+
     return params
 
 def add_location(latitude, longitude):

@@ -9,7 +9,7 @@ from bounds import BoundingBox, DividedBounds
 from requests.auth import HTTPBasicAuth
 
 spotify_datetime_format = '%Y-%m-%dT%H:%M:%fZ'
-acceptable_divisions = set([1, 4, 9, 16])
+acceptable_divisions = set([1, 4, 9, 16, 64])
 
 app = application = Bottle()
 
@@ -177,7 +177,7 @@ def bottle_check_vibe_params(query_params):
         raise HTTPError(400, 'Invalid longitude range. lon_min is smaller than lon_max')
 
     if (params['divisions'] not in acceptable_divisions):
-        raise HTTPError(400, 'Invalid division number. Must be divisible by 2, positive, and less than 16')
+        raise HTTPError(400, f'Invalid division number. Must be one of {acceptable_divisions}')
 
     return params
 
@@ -370,8 +370,8 @@ def randomize_locations():
     cursor = db.execute(qstring)
 
     for row in cursor:
-        lat_rand = (random() - 0.5) * 0.01
-        lon_rand = (random() - 0.5) * 0.01
+        lat_rand = (random() - 0.5) * 0.05
+        lon_rand = (random() - 0.5) * 0.05
 
         print(f'Row id: {row["id"]} - {row["latitude"]} + {lat_rand} - {row["longitude"]} + {lon_rand}')
 

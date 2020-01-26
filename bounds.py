@@ -17,14 +17,11 @@ class BoundingBox():
 
         return (self.lat_max, self.lon_max)
 
-class DividedBounds():
+class DividedBounds(BoundingBox):
 
-    def __init__(self, lat_min, lat_max, lon_min, lon_max, divisions):
+    def __init__(self, divisions, *args):
 
-        self.lat_min = lat_min
-        self.lat_max = lat_max
-        self.lon_min = lon_min
-        self.lon_max = lon_max
+        super().__init__(*args)
         self.divisions = divisions
 
     def boxes(self):

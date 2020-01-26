@@ -128,7 +128,7 @@ def bottle_get_vibe():
 
     params = bottle_check_vibe_params(request.query)
 
-    big_box = DividedBounds(params['lat_min'], params['lat_max'], params['lon_min'], params['lon_max'], params['divisions'])
+    big_box = DividedBounds(params['divisions'], params['lat_min'], params['lat_max'], params['lon_min'], params['lon_max'])
 
     vibes = []
     for box in big_box.boxes():
@@ -355,6 +355,46 @@ def get_top_vibes(box):
             AND genre != 'Other'
         GROUP BY genre
         ORDER BY genre_total_count DESC, genre_avg_popularity DESC
+        LIMIT 1
+    '''
+
+    cursor = db.execute(qstring, [
+        box.lat_min,
+        box.lat_max,
+        box.lon_min,
+        box.lon_max
+    ])
+    return sqlite_result_to_serializable(cursor.fetchall())
+
+def get_top_track(box):
+
+    qstring = f'''
+        SELECT
+            location_id,
+            latitude,
+            longitude,
+            t.id AS track_id,
+            a.id AS artist_id,
+            t.spotify_id AS spotify_track_id,
+            a.spotify_id AS spotify_artist_id,
+            count,
+            last_vibed,
+            title,
+            album,
+            a.name AS artist,
+            genre,
+            popularity
+        FROM vibe AS v
+            LEFT JOIN location AS l ON v.location_id = l.id
+            LEFT JOIN track AS t ON v.track_id = t.id
+            LEFT JOIN artist AS a ON t.artist_id = a.id
+        WHERE
+            l.latitude > ?
+            AND l.latitude < ?
+            AND l.longitude > ?
+            AND l.longitude < ?
+            AND v.last_vibed > strftime('{spotify_datetime_format}', 'now', '-7 days')
+        ORDER BY count DESC, popularity DESC
         LIMIT 1
     '''
 

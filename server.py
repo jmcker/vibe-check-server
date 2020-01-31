@@ -412,7 +412,7 @@ def get_top_vibes(box):
                 top_track_popularity DESC
         ) AS grouped
         GROUP BY grouped.genre_id
-        LIMIT 1
+        LIMIT 2
     '''
 
     cursor = db.execute(qstring, [

@@ -365,9 +365,9 @@ def get_top_vibes(box):
                 g.name AS genre,
                 genre_totals.genre_total_count,
                 genre_totals.genre_avg_popularity,
+                g.id AS genre_id,
                 t.id AS track_id,
                 a.id AS artist_id,
-                g.id AS genre_id,
                 t.spotify_id AS spotify_track_id,
                 a.spotify_id AS spotify_artist_id,
                 t.title,
@@ -406,12 +406,14 @@ def get_top_vibes(box):
                 AND v.last_vibed > strftime('{spotify_datetime_format}', 'now', '-7 days')
             GROUP BY t.id
             ORDER BY
-                genre_total_count DESC,
-                genre_avg_popularity DESC,
-                top_track_count DESC,
-                top_track_popularity DESC
+                top_track_count ASC,        -- Use ASC since the GROUP BY grabs the last row
+                top_track_popularity ASC,   -- Use ASC since the GROUP BY grabs the last row
+                v.last_vibed ASC
         ) AS grouped
         GROUP BY grouped.genre_id
+        ORDER BY
+            genre_total_count DESC,
+            genre_avg_popularity DESC
         LIMIT 2
     '''
 

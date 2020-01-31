@@ -9,7 +9,7 @@ from bounds import BoundingBox, DividedBounds
 from requests.auth import HTTPBasicAuth
 
 spotify_datetime_format = '%Y-%m-%dT%H:%M:%fZ'
-acceptable_divisions = set([1, 4, 9, 16, 64])
+acceptable_divisions = set([1, 4, 9, 16])
 
 app = application = Bottle()
 
@@ -111,6 +111,7 @@ def bottle_vibe_post():
 
     track_ids = []
     for track in request.json['tracks']:
+        add_genre(track)
         add_artist(track)
         track_id = add_track(track)
         track_ids.append(track_id)
@@ -214,6 +215,33 @@ def add_location(latitude, longitude):
     location_id = cursor.fetchone()['id']
     return location_id
 
+def add_genre(genre_info):
+
+    qstring = '''
+        INSERT OR IGNORE INTO genre (
+            name
+        ) VALUES (?)
+    '''
+
+    db.execute(qstring, [
+        genre_info['genre']
+    ])
+
+    db.commit()
+
+    qstring = '''
+        SELECT id FROM genre
+        WHERE
+            name = ?
+    '''
+
+    cursor = db.execute(qstring, [
+        genre_info['genre']
+    ])
+
+    genre_id = cursor.fetchone()['id']
+    return genre_id
+
 def add_artist(artist_info):
 
     qstring = '''
@@ -249,26 +277,27 @@ def add_track(track_info):
         INSERT OR REPLACE INTO track (
             id,
             spotify_id,
+            genre_id,
             artist_id,
             title,
             album,
-            genre,
             original_genre,
             popularity
         ) VALUES (
             (SELECT id FROM track WHERE spotify_id = ?),
             ?,
+            (SELECT id FROM genre WHERE name = ?),
             (SELECT id FROM artist WHERE spotify_id = ?),
-        ?, ?, ?, ?, ?)
+        ?, ?, ?, ?)
     '''
 
     db.execute(qstring, [
         track_info['track_id'],
         track_info['track_id'],
+        track_info['genre'],
         track_info['artist_id'],
         track_info['title'],
         track_info['album'],
-        track_info['genre'],
         track_info['original_genre'],
         track_info['popularity']
     ])
@@ -306,6 +335,7 @@ def add_vibe(location_id, track_id):
 
     db.commit()
 
+    # TODO: Use spotify timestamp if newer than existing
     qstring = f'''
         UPDATE vibe SET
             count = count + 1,
@@ -326,79 +356,71 @@ def get_top_vibes(box):
 
     qstring = f'''
         SELECT
-            location_id,
-            latitude,
-            longitude,
-            genre,
-            sum(count) AS genre_total_count,
-            avg(popularity) AS genre_avg_popularity,
-            t.id AS track_id,
-            a.id AS artist_id,
-            t.spotify_id AS spotify_track_id,
-            a.spotify_id AS spotify_artist_id,
-            count AS top_track_count,
-            last_vibed,
-            title,
-            album,
-            a.name AS artist,
-            popularity AS top_track_popularity
-        FROM vibe AS v
-            LEFT JOIN location AS l ON v.location_id = l.id
-            LEFT JOIN track AS t ON v.track_id = t.id
-            LEFT JOIN artist AS a ON t.artist_id = a.id
-        WHERE
-            l.latitude > ?
-            AND l.latitude < ?
-            AND l.longitude > ?
-            AND l.longitude < ?
-            AND v.last_vibed > strftime('{spotify_datetime_format}', 'now', '-7 days')
-            AND genre != 'Other'
-        GROUP BY genre
-        ORDER BY genre_total_count DESC, genre_avg_popularity DESC
-        LIMIT 3
+            *
+        FROM (
+            SELECT
+                l.id AS location_id,
+                latitude,
+                longitude,
+                g.name AS genre,
+                genre_totals.genre_total_count,
+                genre_totals.genre_avg_popularity,
+                t.id AS track_id,
+                a.id AS artist_id,
+                g.id AS genre_id,
+                t.spotify_id AS spotify_track_id,
+                a.spotify_id AS spotify_artist_id,
+                t.title,
+                a.name AS artist,
+                t.album,
+                sum(v.count) AS top_track_count,
+                t.popularity AS top_track_popularity,
+                v.last_vibed
+            FROM vibe AS v
+                LEFT JOIN location AS l ON v.location_id = l.id
+                LEFT JOIN track AS t ON v.track_id = t.id
+                LEFT JOIN artist AS a ON t.artist_id = a.id
+                LEFT JOIN genre AS g ON t.genre_id = g.id
+                LEFT JOIN (
+                    SELECT
+                        g.id AS genre_id,
+                        sum(v.count) AS genre_total_count,
+                        avg(t.popularity) AS genre_avg_popularity
+                    FROM vibe AS v
+                        LEFT JOIN location AS l ON v.location_id = l.id
+                        LEFT JOIN track AS t ON v.track_id = t.id
+                        LEFT JOIN genre AS g ON t.genre_id = g.id
+                    WHERE
+                        l.latitude > ?
+                        AND l.latitude < ?
+                        AND l.longitude > ?
+                        AND l.longitude < ?
+                        AND v.last_vibed > strftime('{spotify_datetime_format}', 'now', '-7 days')
+                    GROUP BY t.genre_id
+                ) AS genre_totals ON t.genre_id = genre_totals.genre_id
+            WHERE
+                l.latitude > ?
+                AND l.latitude < ?
+                AND l.longitude > ?
+                AND l.longitude < ?
+                AND v.last_vibed > strftime('{spotify_datetime_format}', 'now', '-7 days')
+            GROUP BY t.id
+            ORDER BY
+                genre_total_count DESC,
+                genre_avg_popularity DESC,
+                top_track_count DESC,
+                top_track_popularity DESC
+        ) AS grouped
+        GROUP BY grouped.genre_id
+        LIMIT 1
     '''
 
     cursor = db.execute(qstring, [
         box.lat_min,
         box.lat_max,
         box.lon_min,
-        box.lon_max
-    ])
-    return sqlite_result_to_serializable(cursor.fetchall())
+        box.lon_max,
 
-def get_top_track(box):
-
-    qstring = f'''
-        SELECT
-            location_id,
-            latitude,
-            longitude,
-            t.id AS track_id,
-            a.id AS artist_id,
-            t.spotify_id AS spotify_track_id,
-            a.spotify_id AS spotify_artist_id,
-            count,
-            last_vibed,
-            title,
-            album,
-            a.name AS artist,
-            genre,
-            popularity
-        FROM vibe AS v
-            LEFT JOIN location AS l ON v.location_id = l.id
-            LEFT JOIN track AS t ON v.track_id = t.id
-            LEFT JOIN artist AS a ON t.artist_id = a.id
-        WHERE
-            l.latitude > ?
-            AND l.latitude < ?
-            AND l.longitude > ?
-            AND l.longitude < ?
-            AND v.last_vibed > strftime('{spotify_datetime_format}', 'now', '-7 days')
-        ORDER BY count DESC, popularity DESC
-        LIMIT 1
-    '''
-
-    cursor = db.execute(qstring, [
         box.lat_min,
         box.lat_max,
         box.lon_min,

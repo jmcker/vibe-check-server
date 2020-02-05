@@ -134,7 +134,7 @@ def bottle_get_vibe():
     vibes = []
     for box in big_box.boxes():
 
-        specific_vibes = get_top_vibes(box)
+        specific_vibes = get_top_vibes(box, genre_limit=params['genre_limit'])
 
         # Pick just one for now
         if (len(specific_vibes) > 0):
@@ -144,16 +144,30 @@ def bottle_get_vibe():
         'vibes': vibes
     }
 
-def bottle_check_vibe_params(query_params):
+@app.get('/api/tracks')
+def bottle_get_tracks():
+
+    params = bottle_check_vibe_params(request.query)
+
+    big_box = BoundingBox(params['lat_min'], params['lat_max'], params['lon_min'], params['lon_max'])
+
+    tracks = get_top_tracks(big_box, track_limit=params['track_limit'])
+
+    return {
+        'tracks': tracks
+    }
+
+def bottle_check_vibe_params(query):
 
     params = {}
 
-    params['lat_min'] = request.query.lat_min
-    params['lat_max'] = request.query.lat_max
-    params['lon_min'] = request.query.lon_min
-    params['lon_max'] = request.query.lon_max
-    params['divisions'] = request.query.divisions or 9
-    params['limit'] = request.query.limit or 15 # TODO: Remove
+    params['lat_min'] = query.lat_min
+    params['lat_max'] = query.lat_max
+    params['lon_min'] = query.lon_min
+    params['lon_max'] = query.lon_max
+    params['divisions'] = query.divisions or 9
+    params['genre_limit'] = query.genre_limit or 2
+    params['track_limit'] = query.track_limit or 10
 
     if (not params['lat_min']):
         raise HTTPError(400, 'Missing "lat_min"')
@@ -171,7 +185,9 @@ def bottle_check_vibe_params(query_params):
     params['lat_max'] = float(params['lat_max'])
     params['lon_min'] = float(params['lon_min'])
     params['lon_max'] = float(params['lon_max'])
-    params['divisions'] = float(params['divisions'])
+    params['divisions'] = int(params['divisions'])
+    params['genre_limit'] = int(params['genre_limit'])
+    params['track_limit'] = int(params['track_limit'])
 
     if (params['lat_max'] < params['lat_min']):
         raise HTTPError(400, 'Invalid latitude range. lat_min is smaller than lat_max')
@@ -352,7 +368,7 @@ def add_vibe(location_id, track_id):
 
     db.commit()
 
-def get_top_vibes(box):
+def get_top_vibes(box, genre_limit):
 
     qstring = f'''
         SELECT
@@ -414,7 +430,7 @@ def get_top_vibes(box):
         ORDER BY
             genre_total_count DESC,
             genre_avg_popularity DESC
-        LIMIT 2
+        LIMIT ?
     '''
 
     cursor = db.execute(qstring, [
@@ -426,7 +442,56 @@ def get_top_vibes(box):
         box.lat_min,
         box.lat_max,
         box.lon_min,
-        box.lon_max
+        box.lon_max,
+
+        genre_limit
+    ])
+    return sqlite_result_to_serializable(cursor.fetchall())
+
+def get_top_tracks(box, track_limit):
+
+    qstring = f'''
+        SELECT
+            l.id AS location_id,
+            latitude,
+            longitude,
+            t.id AS track_id,
+            a.id AS artist_id,
+            g.id AS genre_id,
+            t.spotify_id AS spotify_track_id,
+            a.spotify_id AS spotify_artist_id,
+            t.title,
+            a.name AS artist,
+            t.album,
+            g.name AS genre,
+            sum(v.count) AS vibe_count,
+            t.popularity AS popularity,
+            v.last_vibed
+        FROM vibe AS v
+            LEFT JOIN location AS l ON v.location_id = l.id
+            LEFT JOIN track AS t ON v.track_id = t.id
+            LEFT JOIN artist AS a ON t.artist_id = a.id
+            LEFT JOIN genre AS g ON t.genre_id = g.id
+        WHERE
+            l.latitude > ?
+            AND l.latitude < ?
+            AND l.longitude > ?
+            AND l.longitude < ?
+            AND v.last_vibed > strftime('{spotify_datetime_format}', 'now', '-7 days')
+        GROUP BY t.id
+        ORDER BY
+            vibe_count DESC,
+            popularity DESC,
+            v.last_vibed ASC
+        LIMIT ?
+    '''
+
+    cursor = db.execute(qstring, [
+        box.lat_min,
+        box.lat_max,
+        box.lon_min,
+        box.lon_max,
+        track_limit
     ])
     return sqlite_result_to_serializable(cursor.fetchall())
 
